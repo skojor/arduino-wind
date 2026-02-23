@@ -42,12 +42,29 @@
 #define CHILD_ID_TEMP      4
 
 #define MY_RADIO_RFM69
-#define MY_RFM69_FREQUENCY 865525000L + FREQ_ERROR //865525000L //  868000000L
 #define MY_IS_RFM69HW
 #define MY_RFM69_NEW_DRIVER
-#define MY_RFM69_NETWORKID 103    // 102 = Ramsøya. 101 = Lade. 103 = Baglervegen
-#define MY_RFM69_ENABLE_ENCRYPTION // Deactivate for Ramsøya!
 #define MY_BAUD_RATE 38400
+
+#if __has_include("MySensors_wind_radio_private.h")
+#include "MySensors_wind_radio_private.h"
+#endif
+
+#ifndef MY_RFM69_FREQUENCY
+#define MY_RFM69_FREQUENCY 868000000L + FREQ_ERROR
+#endif
+#ifndef MY_RFM69_NETWORKID
+#define MY_RFM69_NETWORKID 100
+#endif
+#ifndef MY_RFM69_ENABLE_ENCRYPTION
+// #define MY_RFM69_ENABLE_ENCRYPTION
+#endif
+#ifndef MY_NODE_ID
+#define MY_NODE_ID 1
+#endif
+#ifndef MY_RFM69_TX_POWER_DBM
+#define MY_RFM69_TX_POWER_DBM 13
+#endif
 
 /*
 Liafjellet - id 6
@@ -89,8 +106,6 @@ const float R2  = 77;    // BATTERY_SENSE_PIN - BATT_GND
 const float Rratio = (R1 + R2) / R2;
 const float battLow =  2.7;
 const float battHigh = 4.20;
-#define MY_NODE_ID 135
-#define MY_RFM69_TX_POWER_DBM 20
 #define MY_PASSIVE_NODE
 
 
@@ -134,6 +149,8 @@ int batteryPcnt;
 volatile uint16_t wspdCtr = 0; // Max wspdCtr = 80 Hz * WIND_SPD_CALC_INTERVAL (5 s) = 400
 uint32_t wspdCalcTime, wspdTime, wdirTime, batTime, tempTime;
 bool tempSensorValid;
+bool tempRequestPending = false;
+uint32_t tempRequestTime = 0;
 int oldWdir = -1, oldWspd = -1, oldTemp = 0, oldBat = 0;
 volatile uint32_t seconds = 0; 
 volatile uint8_t tick12ms = 0;
@@ -196,8 +213,8 @@ void setup() {
   tempSensorValid = tSensors.getAddress(tempsensor, 0);
 
   if (tempSensorValid) {
-    tSensors.setResolution(12);
-    tSensors.setWaitForConversion(true);
+    tSensors.setResolution(11);
+    tSensors.setWaitForConversion(false);
   }
 
   for (int i=0; i<3; i++) { 
@@ -212,10 +229,12 @@ void setup() {
 void loop() {
   wdt_reset();
 
+#ifdef TEST_MODE
   randWaitWspdTest = random(10, 20);
   if (tick12ms % randWaitWspdTest == 0) { // Random ms passed, simulating wspd. REMOVE BEFORE REAL USE!
     wspdISR();
   }
+#endif
   
   uint32_t sec;
   noInterrupts();
@@ -287,19 +306,27 @@ void loop() {
       batTime = now;
     }
 
-    else if (tempSensorValid && now - tempTime >= SEND_TEMP_INTERVAL) {
-      tSensors.requestTemperatures();
-      temp = tSensors.getTempC(tempsensor);
-      if ((int)(temp * 10) != oldTemp) {
-        wdt_reset();
-        transportReInitialise();
-        send(msgTemp.set(temp, 1));
-        //smartSleep(1);
-        oldTemp = (int)(temp * 10);
-        transportDisable();
-        wdt_reset();
+    else if (tempSensorValid) {
+      if (!tempRequestPending && now - tempTime >= SEND_TEMP_INTERVAL) {
+        tSensors.requestTemperatures();
+        tempRequestTime = now;
+        tempRequestPending = true;
       }
-      tempTime = now;
+
+      if (tempRequestPending && now != tempRequestTime) {
+        temp = tSensors.getTempC(tempsensor);
+        if ((int)(temp * 10) != oldTemp) {
+          wdt_reset();
+          transportReInitialise();
+          send(msgTemp.set(temp, 1));
+          //smartSleep(1);
+          oldTemp = (int)(temp * 10);
+          transportDisable();
+          wdt_reset();
+        }
+        tempTime = now;
+        tempRequestPending = false;
+      }
     }
   }
   mySleep();

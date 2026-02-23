@@ -1,0 +1,10 @@
+#pragma once
+
+// Copy this file to MySensors_wind_radio_private.h and fill in your private values.
+// This file is intentionally safe to publish.
+
+#define MY_RFM69_FREQUENCY 865525000L + FREQ_ERROR
+#define MY_RFM69_NETWORKID 103
+#define MY_RFM69_ENABLE_ENCRYPTION
+#define MY_NODE_ID 135
+#define MY_RFM69_TX_POWER_DBM 20
