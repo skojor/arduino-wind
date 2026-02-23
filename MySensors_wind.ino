@@ -1,26 +1,16 @@
-/*  JSK - Vindmåler type batteri/solcelle!
-    04-2022 - For bruk med Davis vindsensor og tenkt klasket opp på Liafjellet
-    DS3231 for timing - sleep mode og timing funker dårlig på atmega328. I2C realtime klokke
+/*  
+  Davis anemometer 6410 wireless sensor using an Arduino pro mini (328p) running at 8 MHz internal clock. 
+  The 328p has the Optiboot bootloader installed to enable the watchdog, and also allows
+  the 16 MHz pro mini board to be configured as 8 MHz 3.3V.
 
-    02-2023 - Endret rutiner for timing, optiboot for aktivering av WDT
+  A DS18B20 sensor is attached to report temperature.
 
-    03-2023 - "Rensket" DS3231-kortet for alt annet enn selve chipen. Programmert BBSQW - SQW signal på batteri.
-              Strømtrekk gikk fra 0.4 mA til ~0.5 uA, med strøm inn bare på batterikontakt.
-              Interrupt 2x/sek fra SQW, sekund teller på høyt nivå. Tidligere lesing av klokka via I2C brukte
-              ~ 2 ms per lesing, dyrebart!
-              Passiv modus på MySensors bruker ca. 8 ms på å sende et flyttall, mot 60-80 ms i "aktiv" modus.
+  The communication is using the MySensors library v2.3.2, and an RFM69H radio chip. 
+  Data is sent in passive mode, as this seems to be more reliable over time.
 
-              Ved antatt snittforbruk på 1 mA med alt vil 5 Ah holde i 208 dager! Antagelig er snittforbuket lavere.
-
-              Bruker egen rutine for sleep mode på MCU, MySensors sleep() vekker radioen hver gang
-              sleep deaktiveres = hver interrupt = 2 - 62 ggr/sek.
-              Radio vekkes nå kun når noe faktisk skal sendes.
-    11-2025 - Byttet til DS1307. Fjernet Kalhamarfilter (unødvendig). Fjernet wdt_disable(), mulig årsak til frys
-    12-2025 - Tester uten ekstern timer, bruker timer 2 på 80 Hz (12,5 ms per.) til timing. Litt mer strøm,
-              men kan da filtrere bort vindmålerhjerteflimmer. Hvis vindm. trigger igjen før det er gått 1 timer2-tick
-              blir den ignorert.
-              Usikker på strømforbruk, men ser egentlig ut som det i snitt går litt mindre enn før (?). TWT
-*/
+  The unit is powered with a 18650 cell via a low power MCP1702 3.3V regulator, and charged 
+  with a solar panel. The battery voltage is monitored with a voltage divider. 
+  */
 
 #include <arduino.h>
 
@@ -67,29 +57,7 @@
 #endif
 
 /*
-Liafjellet - id 6
-*/
-/*const unsigned int WIND_SPD_CALC_INTERVAL = 2; // Calc. wind speed every x second, filter crazy measurements
-const unsigned int  SEND_SPD_INTERVAL = 6; // how often to send wind speed (sec)
-const unsigned int  SEND_DIR_INTERVAL = 30; // wind dir sent here
-const unsigned int  SEND_BATTERY_INTERVAL = 180; // how often to send battery data (sec)
-const unsigned int  SEND_TEMP_INTERVAL = 120;
-const float MAX_WIND_SPEED = 65.0;
-const byte BATTERY_SENSE_PIN = A3;
-const byte WDIR_SENSE = A0;
-const byte WSPD_SENSE = 3;
-const byte ONE_WIRE_BUS = A1;
-const byte SQW_INT = 8;
-const float R1  = 510;    // Vcc - BATTERY_SENSE_PIN
-const float R2  = 77;    // BATTERY_SENSE_PIN - BATT_GND
-const float Rratio = (R1 + R2) / R2;
-const float battLow =  3.45;
-const float battHigh = 4.20;
-//#define MY_NODE_ID 6
-//#define MY_RFM69_TX_POWER_DBM 17*/
-
-/*
-Liafjellet NY - id 6
+Location: mountain - id 6
 */
 const unsigned int WIND_SPD_CALC_INTERVAL = 5; // Calc. wind speed every x second
 const unsigned int  SEND_SPD_INTERVAL = 5; // how often to send wind speed (sec)
@@ -110,7 +78,7 @@ const float battHigh = 4.20;
 
 
 /*
-Brygga - id 8
+Location: Storage - id 8
 */
 /*const unsigned int WIND_SPD_CALC_INTERVAL = 2; // Calc. wind speed every x second, filter crazy measurements
 const unsigned int  SEND_SPD_INTERVAL = 6; // how often to send wind speed (sec)
@@ -165,10 +133,10 @@ MyMessage msgTemp(CHILD_ID_TEMP, V_TEMP);
 MyMessage msgPrefix1(CHILD_ID_SPEED, V_UNIT_PREFIX);  // Custom unit message.
 MyMessage msgPrefix2(CHILD_ID_GUST, V_UNIT_PREFIX);  // Custom unit message.
 
-const float MAX_WIND_SPEED = 65.0;      
-const float MAX_JUMP = 8.0;             // maks tillatt hopp i m/s mellom to målinger
-const float MAX_FACTOR = 2.8;           // ny måling kan maks være ~3x større enn gjennomsnitt
-const float ALPHA = 0.15;               // for glidende gjennomsnitt
+const float MAX_WIND_SPEED = 65.0;
+const float MAX_JUMP = 8.0;
+const float MAX_FACTOR = 2.8;
+const float ALPHA = 0.15;
 
 constexpr uint8_t TIMER2_PRELOAD = 158;
 constexpr uint8_t TICKS_PER_SECOND = 80;
@@ -265,7 +233,7 @@ void loop() {
 
     else if (now - wdirTime >= SEND_DIR_INTERVAL) {
       adcOn();
-      delay(20);
+      delay(10);
       uint16_t wdir_adc = analogRead(WDIR_SENSE);
       adcOff();
 
@@ -334,7 +302,7 @@ void loop() {
 
 void readBatVoltage() {
   adcOn();
-  delay(20);
+  delay(10);
   vBat = Rratio * (float)analogRead(BATTERY_SENSE_PIN) * 1.1 / 1023.0;
   adcOff();
   batteryPcnt = (vBat - battLow) * 100 / (battHigh - battLow);
