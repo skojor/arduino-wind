@@ -101,6 +101,7 @@ volatile uint32_t seconds = 0;
 volatile uint8_t tick12ms = 0;
 volatile uint8_t prevTick = 0;
 uint32_t now = 0;
+const uint32_t RESET_INTERVAL_SECONDS = 21600; // 6 hours
 
 MyMessage msgDirection(CHILD_ID_DIRECTION, V_DIRECTION);
 MyMessage msgSpeed(CHILD_ID_SPEED, V_WIND);
@@ -129,7 +130,7 @@ bool isWindValid(float newvalue, float oldvalue);
 void pciSetup(byte pin);
 void mySleep();
 void wspdISR();
-void(* resetFunc) (void) = 0;
+void performReset();
 inline void adcOn()  { ADCSRA |=  (1<<ADEN); }
 inline void adcOff() { ADCSRA &= ~(1<<ADEN); }
 
@@ -143,6 +144,10 @@ void presentation() {
 }
 
 void setup() {
+  // Clean startup in case the previous reset was watchdog-triggered.
+  MCUSR = 0;
+  wdt_disable();
+
   analogReference(INTERNAL);
   randomSeed(analogRead(A2));
   pinMode(WSPD_SENSE, INPUT);
@@ -192,7 +197,7 @@ void loop() {
   sec = seconds;
   interrupts();
 
-  if (sec >= 21600) resetFunc();
+  if (sec >= RESET_INTERVAL_SECONDS) performReset();
 
   if (sec != now) {
     now = sec;
@@ -370,4 +375,11 @@ ISR(TIMER2_OVF_vect) {
     seconds++;
   }
   TCNT2 = TIMER2_PRELOAD;
+}
+
+void performReset() {
+  cli();
+  MCUSR = 0;
+  wdt_enable(WDTO_15MS);
+  while (true) { }
 }
